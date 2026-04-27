@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "dramafy-494310",
+  "private_key_id": "3bcb0571c7311f37567fb7d75f2723b9e3084cc7",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDiacFGglP/Ji3V\nBRKXWnOdRXAGAaYBHaO4l/ZtU84BRjo7mE3ulbIlgSYrWnOEi+DZV4VctD3LbK9v\nJ2WnPyatZA38+z1rZ6xcN4XZf4/Dqbrx1gZClLEtj8LYa9oZwOla0d1CJiuheTdu\nHCMCsHBjMpkaHlXGnaMNlr8BSzdDP9eG0PdWjGuXqQh2yvy3ldyS9CjDndKPdFd8\n+iKm8msI5fSS3P71+8D19NjBz3ahGG+trqTDPUi5+UTmt+QTZiKlP4BfnmxYEWhA\n2stPLd1UciXJZMsv6Cib/IAx82Xv2beuKi3n5n8w+flDUiJVFHYyUJmNNoKI33fq\nEEomaR+rAgMBAAECggEAXRp64Wk3bD0BbM78saN+1mXW5oln/552FDLdIWDsXgbI\nbHg5V8pT6us8TGiSByfUCtvcGd5+aLflPlKXkRo9Z+C0hdq0i4Wi0Xr9fg5gCmgx\n2T+W7GsjnqY2y/MxyRRUgUW6c/ipSWnEuvE0DmeKl6gXYC+oOxfYlH5wRfJto6eH\nd17JJ0eMtzKsQBWGEvQkqLLYCUloVb6l15pTGSgzW6wLtqx+26ZxvokasamjoUgn\nOMhTc9G7sklVvkcKyCCY16N8Jqbx0KYZqvKMrndywGhQjpr2Sxy/h1+UfiAK8yDp\nlp+8/IX4BBs1gOrdCfoLckdw96FlLn9/x/i+5mog+QKBgQD41ufu9DwpqouAjFvb\nq2GARqOSHfrzUS7CHj01UuOEiDsZzMxUvSp0pynM901lMARZDKigNMkRz38FRRHK\n3EMu7NpeQK5iSpk2FYAgC/iWtcsNrh3D66qQhuYVCj7beW7nPM4j+T86BGxVL+3b\n/2V2Y525a54kdlzR5LG05rUwKQKBgQDo7aS82Guk1u0ZeGXT7GnJuehYonpuvgDt\nRNxHBTsIpOTJbkQsnxpEfq4oGxPZro9GTTTYy/qUy/wR27XUJQ0Vxdo1ch3uMfdo\nKtlBN68tegI8K9RoGx9p4ulYjboRl64ftEYdDT8D/U5/lUuRTx0zZQ8EEPL1dnz7\n/BVs/oc7swKBgQC7ll7AD5RvIKcLoEP7RKY66oWSuFEfLjsekWc5FKR5m61aFL6Q\nvw4LZJ0pa+EHf/w3GUjhhQlzCMZLtbblA8kNzfYMiZwscuovEGRHRF8BVkidpn2/\n3Z/2VguLHu8lytRlM7x+9/3HAeCdE4WvjEfzyML1LgDIogX1IP8qTaWXiQKBgQCD\nb53W5jSPtqviBHtJQ41KRHpkkYKOvO6e9I1sEfqG3S0wsOUNXNYgsm8puGXSHttA\nK07XyvpiPlzF4vnOdP3WPGfuYq+a+l0GTa98SqSx/7gFJiJcgHmQcXeE/axyQuoB\nf+NUf2YApU5HVgJnQ4JRvwPjIoFGm47ZThz0/QdoWwKBgG8h84u5roXUnB0Y01zg\nJ+ZIOl4gYH2dJJSBzOSgSglZUpmjhn1DDsA4zS1bzSiwWR+fnb4bfE62CwtSKrPo\nmn5FrQsqVmF8UHHwyjFQrzNQ8iTwx38khCa4Ws+B3NABC0c3VizNP+HX3yklFx7T\n+HzpfaE0sCX7K/HWth4A8Cmv\n-----END PRIVATE KEY-----\n",
+  "client_email": "dramafy-play-billing@dramafy-494310.iam.gserviceaccount.com",
+  "client_id": "100441203143925425738",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/dramafy-play-billing%40dramafy-494310.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

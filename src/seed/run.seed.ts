@@ -1,4 +1,5 @@
 import { AppDataSource } from '../../config/db/typeorm.config';
+import { seedCoinPacks } from './coin-packs.seed';
 import { seedDramaContent } from './drama.seed';
 import { seedRewardRules } from './rewards.seed';
 import { seedSubscriptionPlans } from './subscription-plans.seed';
@@ -31,6 +32,10 @@ async function runSeed() {
 
     if (target === 'plans' || target === 'all') {
       await seedSubscriptionPlans(AppDataSource);
+    }
+
+    if (target === 'coins' || target === 'all') {
+      await seedCoinPacks(AppDataSource);
     }
 
     console.log('Seed completed successfully.');

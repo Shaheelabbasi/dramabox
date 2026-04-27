@@ -46,6 +46,14 @@ export class SubscriptionPlan extends BaseTimestamps {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  @ApiPropertyOptional({
+    example: 'premium_monthly',
+    nullable: true,
+    description: 'Google Play product ID used for server-side verification mapping',
+  })
+  @Column({ name: 'google_product_id', type: 'varchar',nullable: true })
+  googleProductId: string | null;
+
   @OneToMany(
     () => UserSubscription,
     (userSubscription) => userSubscription.plan,

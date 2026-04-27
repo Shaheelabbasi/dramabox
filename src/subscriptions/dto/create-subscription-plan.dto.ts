@@ -63,4 +63,13 @@ export class CreateSubscriptionPlanDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: 'premium_monthly',
+    description: 'Google Play product ID (SKU) used for verification mapping',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  googleProductId?: string;
 }

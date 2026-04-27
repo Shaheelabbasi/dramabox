@@ -1,7 +1,7 @@
-import { User } from 'src/users/entities/user.entity';
+import { User } from '../../users/entities/user.entity';
 import { Entity, ManyToOne, PrimaryGeneratedColumn, JoinColumn, Unique } from 'typeorm';
 import { Episode } from './episode.entity';
-import { BaseTimestamps } from 'config/common/entitities/timestamp.entity';
+import { BaseTimestamps } from '../../../config/common/entitities/timestamp.entity';
 
 @Entity('episode_view_log')
 @Unique('UQ_episode_view_log', ['user', 'episode'])

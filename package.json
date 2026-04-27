@@ -31,6 +31,8 @@
     "seed:rewards:build": "yarn build && node dist/src/seed/run.seed.js rewards",
     "seed:plans": "ts-node src/seed/run.seed.ts plans",
     "seed:plans:build": "yarn build && node dist/src/seed/run.seed.js plans",
+    "seed:coins": "ts-node src/seed/run.seed.ts coins",
+    "seed:coins:build": "yarn build && node dist/src/seed/run.seed.js coins",
     "seed:all": "ts-node src/seed/run.seed.ts all",
     "seed:all:build": "yarn build && node dist/src/seed/run.seed.js all"
   },
