@@ -10,6 +10,12 @@ import { VerifyGoogleSubscriptionDto } from './dto/verify-subscription.dto';
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
+  @Get('plans')
+  @ApiOperation({ summary: 'Get all subscription plans with details' })
+  findAllPlans() {
+    return this.subscriptionsService.findAllPlans();
+  }
+
   @Get('coin-packs')
   @ApiOperation({ summary: 'Get all coin packs' })
   findAllCoinPacks() {

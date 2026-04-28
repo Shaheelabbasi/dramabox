@@ -2,6 +2,7 @@ import { BaseTimestamps } from '../../../config/common/entitities/timestamp.enti
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { UserSubscription } from './user-subscription.entity';
+import { SubscriptionBasePlan } from './base-plans.entity';
 
 export enum BillingCycle {
   WEEKLY = 'weekly',
@@ -49,10 +50,14 @@ export class SubscriptionPlan extends BaseTimestamps {
   @ApiPropertyOptional({
     example: 'premium_monthly',
     nullable: true,
-    description: 'Google Play product ID used for server-side verification mapping',
+    description:
+      'Google Play product ID used for server-side verification mapping',
   })
-  @Column({ name: 'google_product_id', type: 'varchar',nullable: true })
+  @Column({ name: 'google_product_id', type: 'varchar', nullable: true })
   googleProductId: string | null;
+
+  @OneToMany(() => SubscriptionBasePlan, (bp) => bp.plan, { cascade: true })
+  basePlans: SubscriptionBasePlan[];
 
   @OneToMany(
     () => UserSubscription,

@@ -3,7 +3,8 @@
 /node_modules
 /build
 /uploads
-*.json
+dramafy.json
+
 # Logs
 logs
 *.log

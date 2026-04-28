@@ -77,7 +77,7 @@ export class UsersController {
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID or device ID' })
   async findOne(@Param('id') id: any) {
-    return this.usersService.findByIdOrDeviceId(String(id));
+    return this.usersService.findByIdOrDeviceIdWithSubscriptionFlag(String(id));
   }
 
   @Patch(':userIdOrDeviceId')

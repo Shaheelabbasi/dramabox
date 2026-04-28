@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import {
   RewardEntryType,
@@ -35,12 +35,48 @@ type GoogleSubscriptionPurchase = {
   startTimeMillis?: string;
 };
 
+type GoogleSubscriptionPurchaseV2 = {
+  acknowledgementState?: string;
+  latestOrderId?: string;
+  startTime?: string;
+  subscriptionState?: string;
+  lineItems?: Array<{
+    productId?: string;
+    expiryTime?: string;
+    autoRenewingPlan?: {
+      autoRenewEnabled?: boolean;
+    };
+    offerDetails?: {
+      basePlanId?: string;
+      offerId?: string;
+    };
+  }>;
+};
+
 type GoogleProductPurchase = {
   acknowledgementState?: number;
   consumptionState?: number;
   orderId?: string;
   purchaseState?: number;
   purchaseTimeMillis?: string;
+};
+
+type NormalizedGoogleSubscriptionPurchase = {
+  orderId: string;
+  startsAt: number;
+  endsAt: number;
+  autoRenew: boolean;
+  isAcknowledged: boolean;
+  providerStatus: string;
+  productId: string;
+  status: UserSubscriptionStatus;
+  rawPayload: Record<string, unknown>;
+};
+
+type GoogleServiceAccountCredentials = {
+  client_email: string;
+  private_key: string;
+  private_key_id?: string;
 };
 
 @Injectable()
@@ -68,6 +104,30 @@ export class SubscriptionsService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
+
+  async findAllPlans() {
+    const plans = await this.planRepo.find({
+      relations: {
+        basePlans: {
+          offers: true,
+        },
+      },
+      order: {
+        isActive: 'DESC',
+        createdAt: 'DESC',
+        basePlans: {
+          createdAt: 'ASC',
+          offers: {
+            createdAt: 'ASC',
+          },
+        },
+      },
+    });
+
+    return {
+      data: plans,
+    };
+  }
 
   async findAllCoinPacks() {
     const coinPacks = await this.coinPackRepo.find({
@@ -339,39 +399,32 @@ export class SubscriptionsService {
   }
 
   async verifyGoogleSubscription(dto: VerifyGoogleSubscriptionDto) {
+
     if (!dto.userId && !dto.deviceId) {
       throw new BadRequestException('userId or deviceId is required');
     }
 
     const user = await this.resolveUser(dto.userId, dto.deviceId);
+    const normalizedPurchase = await this.verifyGoogleSubscriptionPurchase(dto);
 
-    const googleData = await this.verifyWithGoogle(
-      dto.purchaseToken,
-      dto.productId,
-    );
-
-    const orderId = googleData.orderId?.trim();
-    if (!orderId) {
-      throw new BadRequestException('Google response missing orderId');
-    }
-    const startsAt = Number(googleData.startTimeMillis);
-    const endsAt = Number(googleData.expiryTimeMillis);
-    const autoRenew = googleData.autoRenewing ?? false;
-    const isAlreadyAcknowledged = googleData.acknowledgementState === 1;
-
-    if (!isAlreadyAcknowledged) {
-      await this.acknowledgePurchase(dto.purchaseToken, dto.productId);
+    if (!normalizedPurchase.isAcknowledged) {
+      await this.acknowledgePurchase(
+        dto.purchaseToken,
+        normalizedPurchase.productId,
+      );
     }
 
-    const plan = await this.findPlanForProduct(dto.productId);
+    const plan = await this.findPlanForProduct(normalizedPurchase.productId);
     if (!plan) {
-      throw new BadRequestException('Invalid productId');
+      throw new BadRequestException(
+        `Invalid productId: ${normalizedPurchase.productId}`,
+      );
     }
 
     const existingTxn = await this.txnRepo.findOne({
       where: {
         provider: 'google',
-        providerTxnId: orderId,
+        providerTxnId: normalizedPurchase.orderId,
       },
     });
 
@@ -395,13 +448,13 @@ export class SubscriptionsService {
       });
     }
 
-    subscription.startsAt = startsAt;
-    subscription.endsAt = endsAt;
-    subscription.autoRenew = autoRenew;
-    subscription.productId = dto.productId;
-    subscription.providerStatus = googleData.paymentState?.toString() ?? '';
+    subscription.startsAt = normalizedPurchase.startsAt;
+    subscription.endsAt = normalizedPurchase.endsAt;
+    subscription.autoRenew = normalizedPurchase.autoRenew;
+    subscription.productId = normalizedPurchase.productId;
+    subscription.providerStatus = normalizedPurchase.providerStatus;
     subscription.isAcknowledged = true;
-    subscription.status = this.mapGoogleStatus(googleData);
+    subscription.status = normalizedPurchase.status;
 
     await this.subscriptionRepo.save(subscription);
 
@@ -411,12 +464,12 @@ export class SubscriptionsService {
           userId: user.id,
           subscriptionId: subscription.id,
           provider: 'google',
-          providerTxnId: orderId,
+          providerTxnId: normalizedPurchase.orderId,
           purchaseToken: dto.purchaseToken,
           amount: plan.price,
           currency: plan.currency,
           status: BillingTransactionStatus.PAID,
-          rawPayload: googleData,
+          rawPayload: normalizedPurchase.rawPayload,
         }),
       );
     } catch (error) {
@@ -438,6 +491,40 @@ export class SubscriptionsService {
       subscriptionId: subscription.id,
       status: subscription.status,
     };
+  }
+
+  private async verifyGoogleSubscriptionPurchase(
+    dto: VerifyGoogleSubscriptionDto,
+  ): Promise<NormalizedGoogleSubscriptionPurchase> {
+    try {
+      const googleV2Data = await this.verifyWithGoogleV2(dto.purchaseToken);
+      const normalizedFromV2 = this.normalizeGoogleV2Purchase(
+        googleV2Data,
+        dto.productId,
+        dto.purchaseToken,
+      );
+      if (normalizedFromV2) {
+        return normalizedFromV2;
+      }
+    } catch (error) {
+      console.log('error is ', error);
+      if (
+        !(error instanceof BadRequestException) ||
+        !error.message.includes('Google verification failed')
+      ) {
+        //throw error;
+      }
+    }
+
+    const googleData = await this.verifyWithGoogle(
+      dto.purchaseToken,
+      dto.productId,
+    );
+    return this.normalizeGoogleV1Purchase(
+      googleData,
+      dto.productId,
+      dto.purchaseToken,
+    );
   }
 
   private async verifyWithGoogle(
@@ -463,6 +550,35 @@ export class SubscriptionsService {
     }
 
     return (await res.json()) as GoogleSubscriptionPurchase;
+  }
+
+  private async verifyWithGoogleV2(
+    purchaseToken: string,
+  ): Promise<GoogleSubscriptionPurchaseV2> {
+    const accessToken = await this.getGoogleAccessToken();
+
+    if (!accessToken) {
+      throw new BadRequestException('toekn not found ');
+    }
+
+    console.log('token is ', accessToken);
+    const res = await fetch(
+      `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${process.env.GOOGLE_PACKAGE_NAME}/purchases/subscriptionsv2/tokens/${purchaseToken}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+
+    if (!res.ok) {
+      const responseBody = await this.readResponseBody(res);
+      throw new BadRequestException(
+        `Google verification failed: ${res.status} ${responseBody}`,
+      );
+    }
+
+    return (await res.json()) as GoogleSubscriptionPurchaseV2;
   }
 
   private async acknowledgePurchase(purchaseToken: string, productId: string) {
@@ -562,17 +678,41 @@ export class SubscriptionsService {
 
   private async getGoogleAccessToken(): Promise<string> {
     const { google } = await import('googleapis');
-    const keyFile = this.resolveGoogleServiceAccountPath();
+    const credentials = this.loadGoogleServiceAccountCredentials();
 
-    const auth = new google.auth.GoogleAuth({
-      keyFile,
+    const auth = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
       scopes: ['https://www.googleapis.com/auth/androidpublisher'],
     });
 
-    const client = await auth.getClient();
-    const token = await client.getAccessToken();
+    try {
+      const tokenResponse = await auth.getAccessToken();
+      const accessToken =
+        typeof tokenResponse === 'string'
+          ? tokenResponse
+          : tokenResponse?.token;
 
-    return token.token!;
+      if (!accessToken) {
+        throw new BadRequestException(
+          'Unable to acquire Google access token from service account credentials.',
+        );
+      }
+
+      return accessToken;
+    } catch (error: any) {
+      const errorText = String(error?.message ?? '');
+      if (
+        errorText.includes('invalid_grant') &&
+        errorText.includes('Invalid JWT Signature')
+      ) {
+        throw new BadRequestException(
+          `Google service account authentication failed (invalid JWT signature). Verify GOOGLE service-account key is valid/not revoked for ${credentials.client_email} and regenerate key if needed.`,
+        );
+      }
+
+      throw error;
+    }
   }
 
   private resolveGoogleServiceAccountPath(): string {
@@ -604,6 +744,47 @@ export class SubscriptionsService {
     );
   }
 
+  private loadGoogleServiceAccountCredentials(): GoogleServiceAccountCredentials {
+    const keyFile = this.resolveGoogleServiceAccountPath();
+    let parsed: Partial<GoogleServiceAccountCredentials>;
+
+    try {
+      const raw = readFileSync(keyFile, 'utf8');
+      parsed = JSON.parse(raw) as Partial<GoogleServiceAccountCredentials>;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to read/parse Google service account key file: ${keyFile}`,
+      );
+    }
+
+    const clientEmail = parsed.client_email?.trim();
+    const privateKey = parsed.private_key
+      ?.replace(/\\n/g, '\n')
+      .replace(/\r\n/g, '\n')
+      .trim();
+
+    if (!clientEmail || !privateKey) {
+      throw new BadRequestException(
+        `Google service account key file is missing client_email or private_key: ${keyFile}`,
+      );
+    }
+
+    if (
+      !privateKey.includes('-----BEGIN PRIVATE KEY-----') ||
+      !privateKey.includes('-----END PRIVATE KEY-----')
+    ) {
+      throw new BadRequestException(
+        `Google service account private_key format is invalid: ${keyFile}`,
+      );
+    }
+
+    return {
+      client_email: clientEmail,
+      private_key: privateKey,
+      private_key_id: parsed.private_key_id?.trim(),
+    };
+  }
+
   private mapGoogleStatus(data: any): UserSubscriptionStatus {
     const now = Date.now();
     const expiryTime = Number(data.expiryTimeMillis);
@@ -625,6 +806,120 @@ export class SubscriptionsService {
     }
 
     return UserSubscriptionStatus.EXPIRED;
+  }
+
+  private normalizeGoogleV1Purchase(
+    data: GoogleSubscriptionPurchase,
+    fallbackProductId: string,
+    purchaseToken: string,
+  ): NormalizedGoogleSubscriptionPurchase {
+    const startsAt = Number(data.startTimeMillis);
+    const endsAt = Number(data.expiryTimeMillis);
+    const safeStartsAt = Number.isFinite(startsAt) ? startsAt : Date.now();
+    const safeEndsAt =
+      Number.isFinite(endsAt) && endsAt > safeStartsAt
+        ? endsAt
+        : safeStartsAt + 1000;
+
+    return {
+      orderId: this.normalizeProviderTxnId(data.orderId, purchaseToken),
+      startsAt: safeStartsAt,
+      endsAt: safeEndsAt,
+      autoRenew: data.autoRenewing ?? false,
+      isAcknowledged: data.acknowledgementState === 1,
+      providerStatus: data.paymentState?.toString() ?? '',
+      productId: fallbackProductId,
+      status: this.mapGoogleStatus(data),
+      rawPayload: {
+        source: 'subscriptions_v1',
+        productId: fallbackProductId,
+        ...data,
+      },
+    };
+  }
+
+  private normalizeGoogleV2Purchase(
+    data: GoogleSubscriptionPurchaseV2,
+    fallbackProductId: string,
+    purchaseToken: string,
+  ): NormalizedGoogleSubscriptionPurchase | null {
+    const lineItems = data.lineItems ?? [];
+    if (lineItems.length === 0) {
+      return null;
+    }
+
+    const sortedLineItems = [...lineItems].sort((a, b) => {
+      const aExpiry = Date.parse(a.expiryTime ?? '');
+      const bExpiry = Date.parse(b.expiryTime ?? '');
+      return bExpiry - aExpiry;
+    });
+    const activeLineItem = sortedLineItems[0];
+    const startsAt = Date.parse(data.startTime ?? '');
+    const endsAt = Date.parse(activeLineItem.expiryTime ?? '');
+    const safeStartsAt = Number.isFinite(startsAt) ? startsAt : Date.now();
+    const safeEndsAt =
+      Number.isFinite(endsAt) && endsAt > safeStartsAt
+        ? endsAt
+        : safeStartsAt + 1000;
+    const resolvedProductId = activeLineItem.productId || fallbackProductId;
+
+    return {
+      orderId: this.normalizeProviderTxnId(data.latestOrderId, purchaseToken),
+      startsAt: safeStartsAt,
+      endsAt: safeEndsAt,
+      autoRenew: activeLineItem.autoRenewingPlan?.autoRenewEnabled ?? false,
+      isAcknowledged:
+        data.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED',
+      providerStatus: data.subscriptionState ?? '',
+      productId: resolvedProductId,
+      status: this.mapGoogleV2Status(data.subscriptionState, safeEndsAt),
+      rawPayload: {
+        source: 'subscriptions_v2',
+        productId: resolvedProductId,
+        basePlanId: activeLineItem.offerDetails?.basePlanId ?? null,
+        offerId: activeLineItem.offerDetails?.offerId ?? null,
+        ...data,
+      },
+    };
+  }
+
+  private mapGoogleV2Status(
+    subscriptionState: string | undefined,
+    expiryTimeMillis: number,
+  ): UserSubscriptionStatus {
+    if (subscriptionState === 'SUBSCRIPTION_STATE_CANCELED') {
+      return UserSubscriptionStatus.CANCELLED;
+    }
+
+    if (subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD') {
+      return UserSubscriptionStatus.GRACE_PERIOD;
+    }
+
+    if (subscriptionState === 'SUBSCRIPTION_STATE_PENDING') {
+      return UserSubscriptionStatus.PENDING;
+    }
+
+    if (
+      subscriptionState === 'SUBSCRIPTION_STATE_ACTIVE' ||
+      subscriptionState === 'SUBSCRIPTION_STATE_ON_HOLD'
+    ) {
+      return UserSubscriptionStatus.ACTIVE;
+    }
+
+    if (Number.isFinite(expiryTimeMillis) && expiryTimeMillis > Date.now()) {
+      return UserSubscriptionStatus.ACTIVE;
+    }
+
+    return UserSubscriptionStatus.EXPIRED;
+  }
+
+  private normalizeProviderTxnId(
+    orderId: string | undefined,
+    purchaseToken: string,
+  ): string {
+    const resolved =
+      orderId?.trim() || `google_purchase_token:${purchaseToken}`;
+    return resolved.slice(0, 150);
   }
 
   private async resolveUser(userId?: number, deviceId?: string) {

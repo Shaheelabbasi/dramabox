@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Between, In, Not, Repository } from 'typeorm';
+import { Between, In, LessThanOrEqual, MoreThan, Not, Repository } from 'typeorm';
 import { PageDto } from '../../config/common/dto/page.dto';
 import { PageMetaDto } from '../../config/common/dto/page-meta.dto';
 import { Drama } from '../dramas/entities/drama.entity';
@@ -364,6 +364,28 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  async findByIdOrDeviceIdWithSubscriptionFlag(idOrDeviceId: string) {
+    const user = await this.findByIdOrDeviceId(idOrDeviceId);
+    const now = Date.now();
+
+    const activeSubscriptionCount = await this.userSubscriptionsRepository.count({
+      where: {
+        userId: user.id,
+        status: In([
+          UserSubscriptionStatus.ACTIVE,
+          UserSubscriptionStatus.GRACE_PERIOD,
+        ]),
+        startsAt: LessThanOrEqual(now),
+        endsAt: MoreThan(now),
+      },
+    });
+
+    return {
+      ...user,
+      hasActiveSubscription: activeSubscriptionCount > 0,
+    };
   }
 
   async findUserWatchHistory(
