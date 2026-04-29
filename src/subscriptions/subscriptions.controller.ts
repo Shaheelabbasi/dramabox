@@ -28,6 +28,15 @@ export class SubscriptionsController {
     return this.subscriptionsService.createSubscriptionPlan(dto);
   }
 
+  @Post('google/webhook')
+  @ApiOperation({
+    summary: 'Google Play RTDN Webhook',
+  })
+  async googleWebhook(@Body() body: any) {
+    console.log('called ');
+    return this.subscriptionsService.handleGoogleRtdn(body);
+  }
+
   @Post('google/verify')
   @ApiOperation({ summary: 'Verify Google Play subscription purchase' })
   verifyGoogleSubscription(@Body() dto: VerifyGoogleSubscriptionDto) {
@@ -35,7 +44,9 @@ export class SubscriptionsController {
   }
 
   @Post('google/coins/verify')
-  @ApiOperation({ summary: 'Verify Google Play coin purchase and credit balance' })
+  @ApiOperation({
+    summary: 'Verify Google Play coin purchase and credit balance',
+  })
   verifyGoogleCoinPurchase(@Body() dto: VerifyGoogleCoinPurchaseDto) {
     return this.subscriptionsService.verifyGoogleCoinPurchase(dto);
   }

@@ -79,6 +79,14 @@ type GoogleServiceAccountCredentials = {
   private_key_id?: string;
 };
 
+const SUBSCRIPTION_RENEWED = 2;
+const SUBSCRIPTION_CANCELED = 3;
+const SUBSCRIPTION_ON_HOLD = 5;
+const SUBSCRIPTION_IN_GRACE_PERIOD = 6;
+const SUBSCRIPTION_RESTARTED = 7;
+const SUBSCRIPTION_REVOKED = 12;
+const SUBSCRIPTION_EXPIRED = 13;
+
 @Injectable()
 export class SubscriptionsService {
   constructor(
@@ -399,7 +407,6 @@ export class SubscriptionsService {
   }
 
   async verifyGoogleSubscription(dto: VerifyGoogleSubscriptionDto) {
-
     if (!dto.userId && !dto.deviceId) {
       throw new BadRequestException('userId or deviceId is required');
     }
@@ -507,7 +514,6 @@ export class SubscriptionsService {
         return normalizedFromV2;
       }
     } catch (error) {
-      console.log('error is ', error);
       if (
         !(error instanceof BadRequestException) ||
         !error.message.includes('Google verification failed')
@@ -561,7 +567,6 @@ export class SubscriptionsService {
       throw new BadRequestException('toekn not found ');
     }
 
-    console.log('token is ', accessToken);
     const res = await fetch(
       `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${process.env.GOOGLE_PACKAGE_NAME}/purchases/subscriptionsv2/tokens/${purchaseToken}`,
       {
@@ -593,7 +598,7 @@ export class SubscriptionsService {
         },
       },
     );
-
+    console.log('subs crpyion acknowldement res:',res);
     if (!res.ok) {
       const responseBody = await this.readResponseBody(res);
       throw new BadRequestException(
@@ -845,6 +850,7 @@ export class SubscriptionsService {
   ): NormalizedGoogleSubscriptionPurchase | null {
     const lineItems = data.lineItems ?? [];
     if (lineItems.length === 0) {
+      console.log("sdjf hdjhfdsfjkds ")
       return null;
     }
 
@@ -986,5 +992,121 @@ export class SubscriptionsService {
   private isUniqueConstraintViolation(error: QueryFailedError): boolean {
     const driverError = error.driverError as { code?: string } | undefined;
     return driverError?.code === '23505';
+  }
+
+  async handleGoogleRtdn(body: any): Promise<void> {
+    // Pub/Sub wraps the payload in a message envelope
+    const messageData = body?.message?.data;
+    if (!messageData) {
+      console.warn('RTDN: missing message.data', body);
+      return;
+    }
+
+    // Decode base64 payload
+    let payload: any;
+    try {
+      const json = Buffer.from(messageData, 'base64').toString('utf-8');
+      payload = JSON.parse(json);
+    } catch {
+      console.warn('RTDN: failed to decode message.data');
+      return;
+    }
+
+    // Play sends a testNotification on setup — just acknowledge it
+    if (payload.testNotification) {
+      console.log('RTDN: test notification received ✅');
+      return;
+    }
+
+    const notification = payload.subscriptionNotification;
+    if (!notification) {
+      console.warn('RTDN: no subscriptionNotification in payload', payload);
+      return;
+    }
+
+    const { notificationType, purchaseToken, subscriptionId } = notification;
+    console.log(`RTDN: type=${notificationType} sku=${subscriptionId}`);
+
+    // Find subscription record by purchaseToken
+    const subscription = await this.subscriptionRepo.findOne({
+      where: { purchaseToken },
+    });
+
+    if (!subscription) {
+      console.warn(
+        `RTDN: no subscription found for purchaseToken=${purchaseToken}`,
+      );
+      return;
+    }
+
+    switch (notificationType) {
+      case SUBSCRIPTION_RENEWED:
+      case SUBSCRIPTION_RESTARTED: {
+        // Fetch fresh expiry from Play API
+        const freshData = await this.verifyWithGoogleV2(purchaseToken);
+        const normalized = this.normalizeGoogleV2Purchase(
+          freshData,
+          subscriptionId,
+          purchaseToken,
+        );
+        if (normalized) {
+          await this.subscriptionRepo.update(subscription.id, {
+            status: normalized.status,
+            endsAt: normalized.endsAt,
+            autoRenew: normalized.autoRenew,
+            providerStatus: normalized.providerStatus,
+          });
+          console.log(
+            `RTDN: renewed userId=${subscription.userId} endsAt=${new Date(normalized.endsAt).toISOString()}`,
+          );
+        }
+        break;
+      }
+
+      case SUBSCRIPTION_CANCELED: {
+        // User canceled — keep access until current period ends
+        await this.subscriptionRepo.update(subscription.id, {
+          status: UserSubscriptionStatus.CANCELLED,
+          autoRenew: false,
+        });
+        console.log(
+          `RTDN: canceled userId=${subscription.userId} access until endsAt`,
+        );
+        break;
+      }
+
+      case SUBSCRIPTION_EXPIRED:
+      case SUBSCRIPTION_REVOKED: {
+        await this.subscriptionRepo.update(subscription.id, {
+          status: UserSubscriptionStatus.EXPIRED,
+        });
+        console.log(`RTDN: expired userId=${subscription.userId}`);
+        break;
+      }
+
+      case SUBSCRIPTION_ON_HOLD: {
+        // Payment failed — revoke access
+        await this.subscriptionRepo.update(subscription.id, {
+          status: UserSubscriptionStatus.EXPIRED,
+          autoRenew: false,
+        });
+        console.log(
+          `RTDN: on_hold (payment failed) userId=${subscription.userId}`,
+        );
+        break;
+      }
+
+      case SUBSCRIPTION_IN_GRACE_PERIOD: {
+        // Payment failed but grace period active — keep access, mark grace period
+        await this.subscriptionRepo.update(subscription.id, {
+          status: UserSubscriptionStatus.GRACE_PERIOD,
+        });
+        console.log(`RTDN: grace_period userId=${subscription.userId}`);
+        break;
+      }
+
+      default:
+        console.log(`RTDN: unhandled notificationType=${notificationType}`);
+    }
   }
 }

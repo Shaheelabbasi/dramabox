@@ -319,7 +319,7 @@ export class DramasService {
     }
 
     // =========================================
-    // ✅ GLOBAL 3 EPISODE LIMIT (VIEW LOG BASED)
+    // GLOBAL LIMIT CHECK + COIN UNLOCK (VIEW LOG BASED)
     // =========================================
     const watchedEpisodesCount = await this.episodeViewLogRepository.count({
       where: {
@@ -329,17 +329,78 @@ export class DramasService {
 
     const hasActiveSubscription = await this.hasActiveSubscription(viewer.id);
     const freeEpisodeLimit = this.getFreeEpisodeLimit(); // 3
+    const existingEpisodeViewLog = await this.episodeViewLogRepository.findOne({
+      where: {
+        user: { id: viewer.id },
+        episode: { id: episode.id },
+      },
+    });
+    const isAlreadyStartedEpisode = Boolean(existingEpisodeViewLog);
+    const requiresCoinUnlock =
+      !hasActiveSubscription &&
+      watchedEpisodesCount >= freeEpisodeLimit &&
+      !isAlreadyStartedEpisode;
 
-    if (!hasActiveSubscription && watchedEpisodesCount >= freeEpisodeLimit) {
-      if (!unlockWithCoins) {
-        throw new ForbiddenException({
-          message: `You have reached the ${freeEpisodeLimit} episode limit on the basic plan`,
-          reason: 'global_episode_limit_reached',
-          can_watch: false,
-          watched_episodes_count: watchedEpisodesCount,
-          unlock_with_coins_required: true,
-          required_coins: episodeUnlockCost,
+    if (requiresCoinUnlock && !unlockWithCoins) {
+      throw new ForbiddenException({
+        message: `You have reached the ${freeEpisodeLimit} episode limit on the basic plan`,
+        reason: 'global_episode_limit_reached',
+        can_watch: false,
+        watched_episodes_count: watchedEpisodesCount,
+        unlock_with_coins_required: true,
+        required_coins: episodeUnlockCost,
+      });
+    }
+
+    if (requiresCoinUnlock && unlockWithCoins) {
+      const unlockIdempotencyKey = `episode_unlock:${viewer.id}:${episode.id}`;
+
+      try {
+        await this.dataSource.transaction(async (manager) => {
+          const userRepository = manager.getRepository(User);
+          const rewardsHistoryRepository = manager.getRepository(RewardHistory);
+
+          const currentUser = await userRepository.findOne({
+            where: { id: viewer.id },
+          });
+
+          if (!currentUser) {
+            throw new NotFoundException(`User ${viewer.id} not found`);
+          }
+
+          if (currentUser.balance < episodeUnlockCost) {
+            throw new ForbiddenException({
+              message: `Insufficient balance`,
+              can_watch: false,
+              required_coins: episodeUnlockCost,
+              current_balance: currentUser.balance,
+            });
+          }
+
+          await rewardsHistoryRepository.save(
+            rewardsHistoryRepository.create({
+              userId: currentUser.id,
+              ruleId: null,
+              entryType: RewardEntryType.SPEND,
+              coinsDelta: -episodeUnlockCost,
+              referenceType: 'episode_unlock',
+              referenceId: String(episode.id),
+              idempotencyKey: unlockIdempotencyKey,
+            }),
+          );
+
+          currentUser.balance -= episodeUnlockCost;
+          await userRepository.save(currentUser);
         });
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as any).code === '23505'
+        ) {
+          // idempotent replay: unlock charge already recorded
+        } else {
+          throw error;
+        }
       }
     }
 
@@ -360,130 +421,19 @@ export class DramasService {
     const isResuming = Boolean(watchHistory);
 
     // =========================================
-    // FIRST TIME / CREATE / COIN FLOW
+    // WATCH HISTORY UPSERT (PER DRAMA RESUME LOGIC)
     // =========================================
     if (!watchHistory) {
-      const startedEpisodesCount = await this.episodeViewLogRepository.count({
-        where: {
-          user: { id: viewer.id },
-        },
-      });
-
-      const hasActiveSubscription = await this.hasActiveSubscription(viewer.id);
-      const freeEpisodeLimit = this.getFreeEpisodeLimit();
-
-      // 🔥 BASIC LIMIT CHECK (ONLY FOR NON-SUBSCRIBED USERS)
-      if (!hasActiveSubscription && startedEpisodesCount >= freeEpisodeLimit) {
-        if (!unlockWithCoins) {
-          throw new ForbiddenException({
-            message: `You have reached the ${freeEpisodeLimit} episode limit on the basic plan`,
-            reason: 'basic_plan_limit_reached',
-            can_watch: false,
-            started_episodes_count: startedEpisodesCount,
-            unlock_with_coins_required: true,
-            required_coins: episodeUnlockCost,
-          });
-        }
-
-        // ===============================
-        // 💰 COIN UNLOCK FLOW (UNCHANGED)
-        // ===============================
-        const unlockIdempotencyKey = `episode_unlock:${viewer.id}:${episode.id}`;
-
-        try {
-          const unlockResult = await this.dataSource.transaction(
-            async (manager) => {
-              const userRepository = manager.getRepository(User);
-              const watchHistoryRepository =
-                manager.getRepository(WatchHistory);
-              const rewardsHistoryRepository =
-                manager.getRepository(RewardHistory);
-
-              const currentUser = await userRepository.findOne({
-                where: { id: viewer.id },
-              });
-
-              if (!currentUser) {
-                throw new NotFoundException(`User ${viewer.id} not found`);
-              }
-
-              if (currentUser.balance < episodeUnlockCost) {
-                throw new ForbiddenException({
-                  message: `Insufficient balance`,
-                  can_watch: false,
-                  required_coins: episodeUnlockCost,
-                  current_balance: currentUser.balance,
-                });
-              }
-
-              await rewardsHistoryRepository.save(
-                rewardsHistoryRepository.create({
-                  userId: currentUser.id,
-                  ruleId: null,
-                  entryType: RewardEntryType.SPEND,
-                  coinsDelta: -episodeUnlockCost,
-                  referenceType: 'episode_unlock',
-                  referenceId: String(episode.id),
-                  idempotencyKey: unlockIdempotencyKey,
-                }),
-              );
-
-              currentUser.balance -= episodeUnlockCost;
-              await userRepository.save(currentUser);
-
-              const createdWatchHistory = await watchHistoryRepository.save(
-                watchHistoryRepository.create({
-                  user: { id: currentUser.id } as User,
-                  episode: { id: episode.id } as Episode,
-                  drama: { id: episode.dramaId },
-                  progressSeconds: 0,
-                  completed: false,
-                  lastWatchedAt: new Date(),
-                }),
-              );
-
-              return {
-                watchHistory: createdWatchHistory,
-                balance: currentUser.balance,
-              };
-            },
-          );
-
-          watchHistory = unlockResult.watchHistory;
-        } catch (error) {
-          if (
-            error instanceof QueryFailedError &&
-            (error as any).code === '23505'
-          ) {
-            watchHistory = await this.watchHistoryRepository.findOne({
-              where: {
-                drama: { id: episode.dramaId },
-                user: { id: viewer.id },
-              },
-              relations: {
-                episode: true,
-                user: true,
-              },
-            });
-          } else {
-            throw error;
-          }
-        }
-      }
-
-      // normal create
-      if (!watchHistory) {
-        watchHistory = await this.watchHistoryRepository.save(
-          this.watchHistoryRepository.create({
-            user: { id: viewer.id } as User,
-            episode: { id: episode.id } as Episode,
-            drama: { id: episode.dramaId },
-            progressSeconds: 0,
-            completed: false,
-            lastWatchedAt: new Date(),
-          }),
-        );
-      }
+      watchHistory = await this.watchHistoryRepository.save(
+        this.watchHistoryRepository.create({
+          user: { id: viewer.id } as User,
+          episode: { id: episode.id } as Episode,
+          drama: { id: episode.dramaId },
+          progressSeconds: 0,
+          completed: false,
+          lastWatchedAt: new Date(),   
+        }),
+      );
     } else {
       watchHistory.lastWatchedAt = new Date();
       watchHistory.episode = { id: episode.id } as Episode;
@@ -614,6 +564,15 @@ export class DramasService {
       return episodeAccess;
     }
 
+    const episodeViewLogs = await this.episodeViewLogRepository.find({
+      where: {
+        user: { id: userId },
+      },
+      relations: {
+        episode: true,
+      },
+    });
+
     const watchHistory = await this.watchHistoryRepository.find({
       where: {
         user: { id: userId },
@@ -625,17 +584,22 @@ export class DramasService {
     });
 
     const startedEpisodeIds = new Set(
-      watchHistory.map((entry) => entry.episode.id),
+      episodeViewLogs.map((entry) => entry.episode.id),
     );
-    const startedEpisodesCount = startedEpisodeIds.size;
+    const hasActiveSubscription = await this.hasActiveSubscription(userId);
+    const hasReachedFreeLimit =
+      startedEpisodeIds.size >= this.getFreeEpisodeLimit();
 
     for (const episode of episodes) {
       const existingWatchHistory = watchHistory.find(
         (entry) => entry.episode.id === episode.id,
       );
-      const isStarted = Boolean(existingWatchHistory);
-      const canWatch =
-        isStarted || startedEpisodesCount < this.getFreeEpisodeLimit();
+      const isStarted = startedEpisodeIds.has(episode.id);
+      const canWatch = hasActiveSubscription
+        ? true
+        : hasReachedFreeLimit
+          ? isStarted
+          : true;
 
       episodeAccess.set(episode.id, {
         canWatch,
@@ -647,6 +611,9 @@ export class DramasService {
     }
 
     return episodeAccess;
+
+
+  
   }
 
   private async hasActiveSubscription(userId: number): Promise<boolean> {
