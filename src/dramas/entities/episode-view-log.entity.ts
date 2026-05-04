@@ -15,5 +15,5 @@ export class EpisodeViewLog extends BaseTimestamps {
 
   @ManyToOne(() => Episode, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'episode_id' })
-  episode: Episode;
+  episode: Episode;  
 }

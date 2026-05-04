@@ -25,6 +25,7 @@ import { CreateSubscriptionPlanDto } from './dto/create-subscription-plan.dto';
 import { VerifyGoogleCoinPurchaseDto } from './dto/verify-google-coin-purchase.dto';
 import { VerifyGoogleSubscriptionDto } from './dto/verify-subscription.dto';
 import * as path from 'path';
+import { SubscriptionStatus } from './enums/subscriptions.enum';
 
 type GoogleSubscriptionPurchase = {
   acknowledgementState?: number;
@@ -79,13 +80,6 @@ type GoogleServiceAccountCredentials = {
   private_key_id?: string;
 };
 
-const SUBSCRIPTION_RENEWED = 2;
-const SUBSCRIPTION_CANCELED = 3;
-const SUBSCRIPTION_ON_HOLD = 5;
-const SUBSCRIPTION_IN_GRACE_PERIOD = 6;
-const SUBSCRIPTION_RESTARTED = 7;
-const SUBSCRIPTION_REVOKED = 12;
-const SUBSCRIPTION_EXPIRED = 13;
 
 @Injectable()
 export class SubscriptionsService {
@@ -176,7 +170,7 @@ export class SubscriptionsService {
           billingCycle: dto.billingCycle ?? BillingCycle.MONTHLY,
           isActive: dto.isActive ?? true,
           googleProductId: normalizedGoogleProductId,
-        }),
+        }), 
       );
 
       return {
@@ -1038,10 +1032,9 @@ export class SubscriptionsService {
       );
       return;
     }
-
     switch (notificationType) {
-      case SUBSCRIPTION_RENEWED:
-      case SUBSCRIPTION_RESTARTED: {
+      case SubscriptionStatus.SUBSCRIPTION_RENEWED:
+      case SubscriptionStatus.SUBSCRIPTION_RESTARTED: {
         // Fetch fresh expiry from Play API
         const freshData = await this.verifyWithGoogleV2(purchaseToken);
         const normalized = this.normalizeGoogleV2Purchase(
@@ -1063,7 +1056,7 @@ export class SubscriptionsService {
         break;
       }
 
-      case SUBSCRIPTION_CANCELED: {
+      case SubscriptionStatus.SUBSCRIPTION_CANCELED: {
         // User canceled — keep access until current period ends
         await this.subscriptionRepo.update(subscription.id, {
           status: UserSubscriptionStatus.CANCELLED,
@@ -1075,8 +1068,8 @@ export class SubscriptionsService {
         break;
       }
 
-      case SUBSCRIPTION_EXPIRED:
-      case SUBSCRIPTION_REVOKED: {
+      case SubscriptionStatus.SUBSCRIPTION_EXPIRED:
+      case SubscriptionStatus.SUBSCRIPTION_REVOKED: {
         await this.subscriptionRepo.update(subscription.id, {
           status: UserSubscriptionStatus.EXPIRED,
         });
@@ -1084,7 +1077,7 @@ export class SubscriptionsService {
         break;
       }
 
-      case SUBSCRIPTION_ON_HOLD: {
+      case SubscriptionStatus.SUBSCRIPTION_ON_HOLD: {
         // Payment failed — revoke access
         await this.subscriptionRepo.update(subscription.id, {
           status: UserSubscriptionStatus.EXPIRED,
@@ -1096,7 +1089,7 @@ export class SubscriptionsService {
         break;
       }
 
-      case SUBSCRIPTION_IN_GRACE_PERIOD: {
+      case SubscriptionStatus.SUBSCRIPTION_IN_GRACE_PERIOD: {
         // Payment failed but grace period active — keep access, mark grace period
         await this.subscriptionRepo.update(subscription.id, {
           status: UserSubscriptionStatus.GRACE_PERIOD,

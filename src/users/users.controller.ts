@@ -49,6 +49,14 @@ export class UsersController {
     return this.usersService.getCheckInStatus(checkInDto);
   }
 
+  @Get('streak')
+  @ApiOperation({ summary: 'Get user streak details' })
+  @ApiQuery({ name: 'userId', required: false, type: Number })
+  @ApiQuery({ name: 'deviceId', required: false, type: String })
+  async getUserStreak(@Query() checkInDto: CheckInDto) {
+    return this.usersService.getUserStreakByIdentifiers(checkInDto);
+  }
+
   @ApiOperation({ summary: 'Get user watch history (paginated)' })
   @ApiParam({
     name: 'userIdOrDeviceId',

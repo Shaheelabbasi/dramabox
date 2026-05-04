@@ -304,6 +304,12 @@ export class UsersService {
       next_milestone: this.getNextMilestone(streakRecord.currentStreak),
     };
   }
+
+  async getUserStreakByIdentifiers(checkInDto: CheckInDto) {
+    const user = await this.resolveUserFromIdentifiers(checkInDto);
+    return this.getUserStreak(user.id);
+  }
+
   async getCheckInStatus(checkInDto: CheckInDto) {
     const user = await this.resolveUserFromIdentifiers(checkInDto);
     const userId = user.id;

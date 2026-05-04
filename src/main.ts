@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-
+import * as express from 'express';
 dotenv.config();
 
 async function bootstrap() {
@@ -21,6 +21,8 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: '*',
   });
+  app.use(express.json({ limit: '500mb' }));
+  app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Drama Box API')

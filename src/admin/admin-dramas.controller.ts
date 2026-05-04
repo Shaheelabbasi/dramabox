@@ -233,6 +233,9 @@ export class AdminDramasController {
       ],
       {
         storage: AssetStorage,
+        limits: {
+          fileSize: 200 * 1024 * 1024, // 200MB (adjust as needed)
+        },
       },
     ),
   )
