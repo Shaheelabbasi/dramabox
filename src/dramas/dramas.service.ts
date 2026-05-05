@@ -30,6 +30,7 @@ import {
   RewardHistory,
 } from '../rewards/entities/reward-history.entity';
 import { EpisodeViewLog } from './entities/episode-view-log.entity';
+import { UserFavoriteDrama } from './entities/user-favorite-drama.entity';
 
 @Injectable()
 export class DramasService {
@@ -47,6 +48,8 @@ export class DramasService {
 
     @InjectRepository(EpisodeViewLog)
     private readonly episodeViewLogRepository: Repository<EpisodeViewLog>,
+    @InjectRepository(UserFavoriteDrama)
+    private readonly userFavoriteDramaRepository: Repository<UserFavoriteDrama>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
@@ -132,12 +135,17 @@ export class DramasService {
       drama.episodes,
       viewer?.id,
     );
+    const favoriteEpisodeIds = viewer
+      ? await this.getFavoriteEpisodeIdSet(viewer.id, drama.id)
+      : new Set<number>();
+    const isDramaFavorite = favoriteEpisodeIds.size > 0;
 
     return {
       id: drama.id,
       title: drama.title,
       description: drama.description,
       thumbnail_url: drama.thumbnailUrl,
+      is_favorite: isDramaFavorite,
       is_exclusive: drama.isExclusive,
       total_episodes: drama.totalEpisodes,
       tag: drama.tag
@@ -152,7 +160,11 @@ export class DramasService {
         name: dramaGenre.genre.name,
       })),
       episodes: drama.episodes.map((episode) =>
-        this.toEpisodeResponse(episode, episodeAccess.get(episode.id)),
+        this.toEpisodeResponse(
+          episode,
+          episodeAccess.get(episode.id),
+          favoriteEpisodeIds.has(episode.id),
+        ),
       ),
       created_at: drama.createdAt,
       updated_at: drama.updatedAt,
@@ -198,9 +210,16 @@ export class DramasService {
 
     const viewer = await this.resolveViewer(userId, deviceId, false);
     const episodeAccess = await this.getEpisodeAccessMap(episodes, viewer?.id);
+    const favoriteEpisodeIds = viewer
+      ? await this.getFavoriteEpisodeIdSet(viewer.id, dramaId)
+      : new Set<number>();
 
     const data = episodes.map((episode) =>
-      this.toEpisodeResponse(episode, episodeAccess.get(episode.id)),
+      this.toEpisodeResponse(
+        episode,
+        episodeAccess.get(episode.id),
+        favoriteEpisodeIds.has(episode.id),
+      ),
     );
     const meta = new PageMetaDto({ pageOptionsDto, itemCount });
 
@@ -681,6 +700,7 @@ export class DramasService {
       progressSeconds?: number;
       completed?: boolean;
     },
+    isFavorite = false,
   ) {
     return {
       id: episode.id,
@@ -694,11 +714,30 @@ export class DramasService {
       can_watch: access?.canWatch ?? true,
       is_started: access?.isStarted ?? false,
       is_locked_by_plan: access?.isLockedByPlan ?? false,
+      is_favorite: isFavorite,
       progress_seconds: access?.progressSeconds ?? 0,
       completed: access?.completed ?? false,
       created_at: episode.createdAt,
       updated_at: episode.updatedAt,
     };
+  }
+
+  private async getFavoriteEpisodeIdSet(userId: number, dramaId: number) {
+    const favorites = await this.userFavoriteDramaRepository.find({
+      where: {
+        user: { id: userId },
+        drama: { id: dramaId },
+      },
+      relations: {
+        episode: true,
+      },
+    });
+
+    return new Set(
+      favorites
+        .map((favorite) => favorite.episode?.id)
+        .filter((episodeId): episodeId is number => Number.isInteger(episodeId)),
+    );
   }
 
   private async ensureEpisodeExists(episodeId: number) {

@@ -5,10 +5,19 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Between, In, LessThanOrEqual, MoreThan, Not, Repository } from 'typeorm';
+import {
+  Between,
+  In,
+  LessThanOrEqual,
+  MoreThan,
+  Not,
+  Repository,
+} from 'typeorm';
 import { PageDto } from '../../config/common/dto/page.dto';
 import { PageMetaDto } from '../../config/common/dto/page-meta.dto';
 import { Drama } from '../dramas/entities/drama.entity';
+import { Episode } from '../dramas/entities/episode.entity';
+import { UserFavoriteDrama } from '../dramas/entities/user-favorite-drama.entity';
 import { WatchHistory } from '../dramas/entities/watch-history.entity';
 import { NotificationService } from '../notifications/notification.service';
 import { Notifications } from '../notifications/entities/notification.entity';
@@ -29,8 +38,12 @@ import { UpdateFirebaseTokenDto } from './dto/update-firebase-token.dto';
 import { ListUserWatchHistoryDto } from './dto/list-user-watch-history.dto';
 import { UpdateUserDetailsDto } from './dto/update-user-details.dto';
 import { CheckInDto } from './dto/check-in.dto';
+import { UpsertUserFavoriteDto } from './dto/upsert-user-favorite.dto';
+import { ListUserFavoritesDto } from './dto/list-user-favorites.dto';
 import { AccountStatus } from './enums/account-status.enum';
 import { UserStreak } from './entities/user-streaks.entity';
+import { AdWatch } from './entities/ad-watch.entity';
+import { CreateAdWatchDto } from './dto/create-ad-watch.dto';
 
 type CreateUserInput = {
   email: string;
@@ -67,7 +80,13 @@ export class UsersService {
     @InjectRepository(UserStreak)
     private readonly userStreakRepository: Repository<UserStreak>,
     @InjectRepository(Drama)
-    //private readonly dramaRepository: Repository<Drama>,
+    private readonly dramaRepository: Repository<Drama>,
+    @InjectRepository(Episode)
+    private readonly episodeRepository: Repository<Episode>,
+    @InjectRepository(UserFavoriteDrama)
+    private readonly userFavoriteDramaRepository: Repository<UserFavoriteDrama>,
+    @InjectRepository(AdWatch)
+    private readonly adWatchRepository: Repository<AdWatch>,
     private readonly notificationService: NotificationService,
     private readonly rewardsService: RewardsService,
   ) {}
@@ -177,7 +196,7 @@ export class UsersService {
         updated_at: savedUser.updatedAt,
       },
     };
-  }
+  } 
 
   async checkIn(checkInDto: CheckInDto) {
     const user = await this.resolveUserFromIdentifiers(checkInDto);
@@ -373,20 +392,22 @@ export class UsersService {
   }
 
   async findByIdOrDeviceIdWithSubscriptionFlag(idOrDeviceId: string) {
-    const user = await this.findByIdOrDeviceId(idOrDeviceId);
+    let user: User;
+    user = await this.findOrCreateGuestByDeviceId(idOrDeviceId);
     const now = Date.now();
 
-    const activeSubscriptionCount = await this.userSubscriptionsRepository.count({
-      where: {
-        userId: user.id,
-        status: In([
-          UserSubscriptionStatus.ACTIVE,
-          UserSubscriptionStatus.GRACE_PERIOD,
-        ]),
-        startsAt: LessThanOrEqual(now),
-        endsAt: MoreThan(now),
-      },
-    });
+    const activeSubscriptionCount =
+      await this.userSubscriptionsRepository.count({
+        where: {
+          userId: user.id,
+          status: In([
+            UserSubscriptionStatus.ACTIVE,
+            UserSubscriptionStatus.GRACE_PERIOD,
+          ]),
+          startsAt: LessThanOrEqual(now),
+          endsAt: MoreThan(now),
+        },
+      });
 
     return {
       ...user,
@@ -482,6 +503,171 @@ export class UsersService {
     });
 
     return new PageDto(data, meta);
+  }
+
+  async getUserFavorites(
+    userIdOrDeviceId: string,
+    listUserFavoritesDto: ListUserFavoritesDto = new ListUserFavoritesDto(),
+  ) {
+    const user = await this.findByIdOrDeviceId(userIdOrDeviceId);
+
+    const [favorites, itemCount] =
+      await this.userFavoriteDramaRepository.findAndCount({
+        where: { user: { id: user.id } },
+        relations: { drama: true, episode: true },
+        order: { id: listUserFavoritesDto.order },
+        skip: listUserFavoritesDto.skip,
+        take: listUserFavoritesDto.take,
+      });
+
+    const data = favorites.map((favorite) => ({
+      id: favorite.id,
+      drama: favorite.drama
+        ? {
+            id: favorite.drama.id,
+            title: favorite.drama.title,
+            thumbnail: favorite.drama.thumbnailUrl,
+            total_episodes: favorite.drama.totalEpisodes,
+          }
+        : null,
+      episode: favorite.episode
+        ? {
+            id: favorite.episode.id,
+            title: favorite.episode.title,
+            episode_number: favorite.episode.episodeNumber,
+            duration_seconds: favorite.episode.durationSeconds,
+            thumbnail: favorite.episode.thumbnail,
+          }
+        : null,
+    }));
+
+    const meta = new PageMetaDto({
+      pageOptionsDto: listUserFavoritesDto,
+      itemCount,
+    });
+
+    return new PageDto(data, meta);
+  }
+
+  async upsertUserFavorite(
+    userIdOrDeviceId: string,
+    upsertUserFavoriteDto: UpsertUserFavoriteDto,
+  ) {
+    const user = await this.findByIdOrDeviceId(userIdOrDeviceId);
+    const { dramaId, episodeId, isFavorite } = upsertUserFavoriteDto;
+
+    const [drama, episode] = await Promise.all([
+      this.dramaRepository.findOne({ where: { id: dramaId } }),
+      this.episodeRepository.findOne({ where: { id: episodeId } }),
+    ]);
+
+    if (!drama) {
+      throw new NotFoundException(`Drama ${dramaId} not found`);
+    }
+
+    if (!episode) {
+      throw new NotFoundException(`Episode ${episodeId} not found`);
+    }
+
+    if (episode.dramaId !== drama.id) {
+      throw new BadRequestException(
+        'episodeId does not belong to the provided dramaId',
+      );
+    }
+
+    const existingFavoriteForDrama =
+      await this.userFavoriteDramaRepository.findOne({
+      where: {
+        user: { id: user.id },
+        drama: { id: drama.id },
+      },
+      relations: { drama: true, episode: true },
+    });
+
+    if (isFavorite) {
+      if (existingFavoriteForDrama) {
+        if (existingFavoriteForDrama.episode?.id === episode.id) {
+          return {
+            message: 'Already in favourites',
+            is_favorite: true,
+            favorite: {
+              id: existingFavoriteForDrama.id,
+              drama_id: existingFavoriteForDrama.drama.id,
+              episode_id: existingFavoriteForDrama.episode.id,
+            },
+          };
+        }
+
+        existingFavoriteForDrama.episode = episode;
+        const updatedFavorite = await this.userFavoriteDramaRepository.save(
+          existingFavoriteForDrama,
+        );
+
+        return {
+          message: 'Favourite updated successfully',
+          is_favorite: true,
+          favorite: {
+            id: updatedFavorite.id,
+            drama_id: updatedFavorite.drama.id,
+            episode_id: updatedFavorite.episode.id,
+          },
+        };
+      }
+
+      const favorite = this.userFavoriteDramaRepository.create({
+        user,
+        drama,
+        episode,
+      });
+      const savedFavorite = await this.userFavoriteDramaRepository.save(favorite);
+
+      return {
+        message: 'Added to favourites',
+        is_favorite: true,
+        favorite: {
+          id: savedFavorite.id,
+          drama_id: drama.id,
+          episode_id: episode.id,
+        },
+      };
+    }
+
+    if (existingFavoriteForDrama) {
+      await this.userFavoriteDramaRepository.remove(existingFavoriteForDrama);
+    }
+
+    return {
+      message: existingFavoriteForDrama
+        ? 'Removed from favourites'
+        : 'Already not in favourites',
+      is_favorite: false,
+      favorite: null,
+    };
+  }
+
+  async createAdWatch(
+    userIdOrDeviceId: string,
+    createAdWatchDto: CreateAdWatchDto = {},
+  ) {
+    const user = await this.findByIdOrDeviceId(userIdOrDeviceId);
+
+    const adWatch = this.adWatchRepository.create({
+      user,
+      eventType: createAdWatchDto.eventType?.trim() || 'ad_watch_completed',
+    });
+
+    const savedAdWatch = await this.adWatchRepository.save(adWatch);
+
+    return {
+      message: 'Ad watch recorded successfully',
+      ad_watch: {
+        id: savedAdWatch.id,
+        user_id: user.id,
+        event_type: savedAdWatch.eventType,
+        created_at: savedAdWatch.createdAt,
+        updated_at: savedAdWatch.updatedAt,
+      },
+    };
   }
 
   async getAllUsers(pageOptionsDto: ListAllUsersDto = new ListAllUsersDto()) {
@@ -930,7 +1116,7 @@ export class UsersService {
       ends_at: subscription.endsAt,
       auto_renew: subscription.autoRenew,
       provider: subscription.provider,
-    //  provider_subscription_id: subscription.providerSubscriptionId,
+      //  provider_subscription_id: subscription.providerSubscriptionId,
       created_at: subscription.createdAt,
     };
   }

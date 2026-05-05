@@ -11,6 +11,7 @@ import { Tag } from './entities/tag.entity';
 import { WatchHistory } from './entities/watch-history.entity';
 import { UserSubscription } from '../subscriptions/entities/user-subscription.entity';
 import { EpisodeViewLog } from './entities/episode-view-log.entity';
+import { UserFavoriteDrama } from './entities/user-favorite-drama.entity';
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { EpisodeViewLog } from './entities/episode-view-log.entity';
       DramaGenre,
       Tag,
       UserSubscription,
-      EpisodeViewLog
+      EpisodeViewLog,
+      UserFavoriteDrama,
     ]),
   ],
   controllers: [DramasController],

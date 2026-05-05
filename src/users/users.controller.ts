@@ -19,6 +19,9 @@ import { CheckInDto } from './dto/check-in.dto';
 import { ListUserWatchHistoryDto } from './dto/list-user-watch-history.dto';
 import { UpdateFirebaseTokenDto } from './dto/update-firebase-token.dto';
 import { UpdateUserDetailsDto } from './dto/update-user-details.dto';
+import { UpsertUserFavoriteDto } from './dto/upsert-user-favorite.dto';
+import { ListUserFavoritesDto } from './dto/list-user-favorites.dto';
+import { CreateAdWatchDto } from './dto/create-ad-watch.dto';
 
 @Controller('users')
 @ApiTags('Users')
@@ -86,6 +89,64 @@ export class UsersController {
   @ApiOperation({ summary: 'Get user by ID or device ID' })
   async findOne(@Param('id') id: any) {
     return this.usersService.findByIdOrDeviceIdWithSubscriptionFlag(String(id));
+  }
+
+  @ApiOperation({ summary: 'Get user favorites (paginated)' })
+  @ApiParam({
+    name: 'userIdOrDeviceId',
+    description: 'User ID or device ID',
+    example: '5',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'take', required: false, type: Number, example: 10 })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    example: 'DESC',
+  })
+  @Get(':userIdOrDeviceId/favourites')
+  async getFavourites(
+    @Param('userIdOrDeviceId') userIdOrDeviceId: string,
+    @Query() listUserFavoritesDto: ListUserFavoritesDto,
+  ) {
+    return this.usersService.getUserFavorites(
+      userIdOrDeviceId,
+      listUserFavoritesDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Add or update user favorite drama/episode' })
+  @ApiParam({
+    name: 'userIdOrDeviceId',
+    description: 'User ID or device ID',
+    example: '5',
+  })
+  @ApiBody({ type: UpsertUserFavoriteDto })
+  @Patch(':userIdOrDeviceId/favourites')
+  async upsertFavourite(
+    @Param('userIdOrDeviceId') userIdOrDeviceId: string,
+    @Body() upsertUserFavoriteDto: UpsertUserFavoriteDto,
+  ) {
+    return this.usersService.upsertUserFavorite(
+      userIdOrDeviceId,
+      upsertUserFavoriteDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Create ad watch entry for a user' })
+  @ApiParam({
+    name: 'userIdOrDeviceId',
+    description: 'User ID or device ID',
+    example: '5',
+  })
+  @ApiBody({ type: CreateAdWatchDto, required: false })
+  @Post(':userIdOrDeviceId/ad-watches')
+  async createAdWatch(
+    @Param('userIdOrDeviceId') userIdOrDeviceId: string,
+    @Body() createAdWatchDto: CreateAdWatchDto,
+  ) {
+    return this.usersService.createAdWatch(userIdOrDeviceId, createAdWatchDto);
   }
 
   @Patch(':userIdOrDeviceId')
