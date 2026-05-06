@@ -14,6 +14,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { PageOptionsDto } from '../../config/common/dto/page-options.dto';
 import { UsersService } from './users.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { ListUserWatchHistoryDto } from './dto/list-user-watch-history.dto';
@@ -82,6 +83,56 @@ export class UsersController {
     return this.usersService.findUserWatchHistory(
       userIdOrDeviceId,
       listUserWatchHistoryDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Get user transaction history (paginated)' })
+  @ApiParam({
+    name: 'userIdOrDeviceId',
+    description: 'User ID or device ID',
+    example: '5',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'take', required: false, type: Number, example: 10 })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    example: 'DESC',
+  })
+  @Get(':userIdOrDeviceId/transactions')
+  async getTransactionHistory(
+    @Param('userIdOrDeviceId') userIdOrDeviceId: string,
+    @Query() pageOptionsDto: PageOptionsDto,
+  ) {
+    return this.usersService.getUserTransactionHistory(
+      userIdOrDeviceId,
+      pageOptionsDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Get user reward history (paginated)' })
+  @ApiParam({
+    name: 'userIdOrDeviceId',
+    description: 'User ID or device ID',
+    example: '5',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'take', required: false, type: Number, example: 10 })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    example: 'DESC',
+  })
+  @Get(':userIdOrDeviceId/reward-history')
+  async getRewardHistory(
+    @Param('userIdOrDeviceId') userIdOrDeviceId: string,
+    @Query() pageOptionsDto: PageOptionsDto,
+  ) {
+    return this.usersService.getUserRewardHistory(
+      userIdOrDeviceId,
+      pageOptionsDto,
     );
   }
 

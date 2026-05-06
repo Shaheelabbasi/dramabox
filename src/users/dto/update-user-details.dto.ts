@@ -6,4 +6,8 @@ export class UpdateUserDetailsDto extends PartialType(UserIdentifiersDto) {
   @IsOptional()
   @IsBoolean()
   notificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  firebaseToken?: string;
 }

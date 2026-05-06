@@ -5,22 +5,22 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
-import { PageDto } from '../../config/common/dto/page.dto';
-import { PageMetaDto } from '../../config/common/dto/page-meta.dto';
-import { User } from '../users/entities/user.entity';
+import { PageDto } from '../../../config/common/dto/page.dto';
+import { PageMetaDto } from '../../../config/common/dto/page-meta.dto';
+import { User } from '../../users/entities/user.entity';
 import {
   RewardEntryType,
   RewardHistory,
-} from '../rewards/entities/reward-history.entity';
-import { RewardRule } from '../rewards/entities/reward-rule.entity';
-import { RewardsService } from '../rewards/rewards.service';
-import { ApplyRewardDto } from './dto/rewards/apply-reward.dto';
-import { CreateRewardRuleDto } from './dto/rewards/create-reward-rule.dto';
-import { GrantRewardDto } from './dto/rewards/grant-reward.dto';
-import { ListRewardRulesDto } from './dto/rewards/list-reward-rules.dto';
-import { ListRewardsHistoryDto } from './dto/rewards/list-rewards-history.dto';
-import { TopUpBalanceDto } from './dto/rewards/top-up-balance.dto';
-import { UpdateRewardRuleDto } from './dto/rewards/update-reward-rule.dto';
+} from '../../rewards/entities/reward-history.entity';
+import { RewardRule } from '../../rewards/entities/reward-rule.entity';
+import { RewardsService } from '../../rewards/rewards.service';
+import { ApplyRewardDto } from '../dto/rewards/apply-reward.dto';
+import { CreateRewardRuleDto } from '../dto/rewards/create-reward-rule.dto';
+import { GrantRewardDto } from '../dto/rewards/grant-reward.dto';
+import { ListRewardRulesDto } from '../dto/rewards/list-reward-rules.dto';
+import { ListRewardsHistoryDto } from '../dto/rewards/list-rewards-history.dto';
+import { TopUpBalanceDto } from '../dto/rewards/top-up-balance.dto';
+import { UpdateRewardRuleDto } from '../dto/rewards/update-reward-rule.dto';
 
 @Injectable()
 export class AdminRewardsService {

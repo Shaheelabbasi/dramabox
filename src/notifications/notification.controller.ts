@@ -17,7 +17,7 @@ export class NotificationsController {
   constructor(private readonly notificationService: NotificationService) {}
 
   @Post('test-push')
-  @Auth()
+ // @Auth()
   @ApiBody({ type: TestPushNotificationDto })
   async testPushNotification(
     @Body() testPushNotificationDto: TestPushNotificationDto,

@@ -15,6 +15,7 @@ import {
 } from 'typeorm';
 import { PageDto } from '../../config/common/dto/page.dto';
 import { PageMetaDto } from '../../config/common/dto/page-meta.dto';
+import { PageOptionsDto } from '../../config/common/dto/page-options.dto';
 import { Drama } from '../dramas/entities/drama.entity';
 import { Episode } from '../dramas/entities/episode.entity';
 import { UserFavoriteDrama } from '../dramas/entities/user-favorite-drama.entity';
@@ -499,6 +500,74 @@ export class UsersService {
 
     const meta = new PageMetaDto({
       pageOptionsDto: listUserWatchHistoryDto,
+      itemCount,
+    });
+
+    return new PageDto(data, meta);
+  }
+
+  async getUserTransactionHistory(
+    userIdOrDeviceId: string,
+    pageOptionsDto: PageOptionsDto = new PageOptionsDto(),
+  ) {
+    const user = await this.findByIdOrDeviceId(userIdOrDeviceId);
+
+    const [billingTransactions, itemCount] =
+      await this.billingTransactionsRepository.findAndCount({
+        where: { userId: user.id },
+        order: { createdAt: pageOptionsDto.order },
+        skip: pageOptionsDto.skip,
+        take: pageOptionsDto.take,
+      });
+
+    const data = billingTransactions.map((transaction) => ({
+      id: transaction.id,
+      transaction_type: 'billing',
+      created_at: transaction.createdAt,
+      billing: {
+          amount: transaction.amount,
+          currency: transaction.currency,
+          provider: transaction.provider,
+          provider_txn_id: transaction.providerTxnId,
+          status: transaction.status,
+      },
+    }));
+
+    const meta = new PageMetaDto({
+      pageOptionsDto,
+      itemCount,
+    });
+
+    return new PageDto(data, meta);
+  }
+
+  async getUserRewardHistory(
+    userIdOrDeviceId: string,
+    pageOptionsDto: PageOptionsDto = new PageOptionsDto(),
+  ) {
+    const user = await this.findByIdOrDeviceId(userIdOrDeviceId);
+
+    const [rewardTransactions, itemCount] =
+      await this.rewardHistoryRepository.findAndCount({
+        where: { userId: user.id },
+        relations: { rule: true },
+        order: { createdAt: pageOptionsDto.order },
+        skip: pageOptionsDto.skip,
+        take: pageOptionsDto.take,
+      });
+
+    const data = rewardTransactions.map((entry) => ({
+      id: entry.id,
+      entry_type: entry.entryType,
+      coins_delta: entry.coinsDelta,
+      reference_type: entry.referenceType,
+      reference_id: entry.referenceId,
+      rule_name: entry.rule?.name ?? null,
+      created_at: entry.createdAt,
+    }));
+
+    const meta = new PageMetaDto({
+      pageOptionsDto,
       itemCount,
     });
 

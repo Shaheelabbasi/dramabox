@@ -230,7 +230,6 @@ export class DramasService {
     const episode = await this.ensureEpisodeExists(episodeId);
     const viewer = await this.resolveViewer(userId, deviceId, false);
 
-    console.log('sdsdsdsds');
     if (!viewer) {
       throw new BadRequestException('userId or deviceId is required');
     }
@@ -332,7 +331,7 @@ export class DramasService {
     const episodeUnlockCost = this.getEpisodeUnlockCost(episode);
 
     const viewer = await this.resolveViewer(userId, deviceId, true);
-
+    //@ts-ignore
     if (!viewer) {
       throw new BadRequestException('userId or deviceId is required');
     }
@@ -355,6 +354,7 @@ export class DramasService {
       },
     });
     const isAlreadyStartedEpisode = Boolean(existingEpisodeViewLog);
+
     const requiresCoinUnlock =
       !hasActiveSubscription &&
       watchedEpisodesCount >= freeEpisodeLimit &&
@@ -450,7 +450,7 @@ export class DramasService {
           drama: { id: episode.dramaId },
           progressSeconds: 0,
           completed: false,
-          lastWatchedAt: new Date(),   
+          lastWatchedAt: new Date(),
         }),
       );
     } else {
@@ -630,9 +630,6 @@ export class DramasService {
     }
 
     return episodeAccess;
-
-
-  
   }
 
   private async hasActiveSubscription(userId: number): Promise<boolean> {
@@ -736,7 +733,9 @@ export class DramasService {
     return new Set(
       favorites
         .map((favorite) => favorite.episode?.id)
-        .filter((episodeId): episodeId is number => Number.isInteger(episodeId)),
+        .filter((episodeId): episodeId is number =>
+          Number.isInteger(episodeId),
+        ),
     );
   }
 

@@ -12,18 +12,18 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AdminDramasService } from './admin-dramas.service';
-import { CreateDramaDto } from './dto/dramas/create-drama.dto';
-import { CreateEpisodeDto } from './dto/episodes/create-episode.dto';
-import { CreateGenreDto } from './dto/genres/create-genre.dto';
-import { CreateTagDto } from './dto/tags/create-tag.dto';
-import { UpdateDramaDto } from './dto/dramas/update-drama.dto';
-import { UpdateEpisodeDto } from './dto/episodes/update-episode.dto';
-import { UpdateGenreDto } from './dto/genres/update-genre.dto';
-import { UpdateTagDto } from './dto/tags/update-tag.dto';
-import { ListTagsDto } from './dto/tags/list-tags.dto';
+import { CreateDramaDto } from '../dto/dramas/create-drama.dto';
+import { CreateEpisodeDto } from '../dto/episodes/create-episode.dto';
+import { CreateGenreDto } from '../dto/genres/create-genre.dto';
+import { CreateTagDto } from '../dto/tags/create-tag.dto';
+import { UpdateDramaDto } from '../dto/dramas/update-drama.dto';
+import { UpdateEpisodeDto } from '../dto/episodes/update-episode.dto';
+import { UpdateGenreDto } from '../dto/genres/update-genre.dto';
+import { UpdateTagDto } from '../dto/tags/update-tag.dto';
+import { ListTagsDto } from '../dto/tags/list-tags.dto';
 import { AssetStorage } from 'config/storage/asset-storage';
-import { Roles } from '../../config/common/decorators/roles.decorator';
-import { UserRole } from '../../config/common/enums/roles.enum';
+import { Roles } from '../../../config/common/decorators/roles.decorator';
+import { UserRole } from '../../../config/common/enums/roles.enum';
 import {
   ApiQuery,
   ApiBearerAuth,

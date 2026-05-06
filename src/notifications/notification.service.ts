@@ -49,7 +49,6 @@ export class NotificationService {
         })
       )?.firebaseToken ||
       '';
-
     if (pushToken) {
       await this.firebaseService.sendNotification(
         pushToken,
@@ -62,7 +61,7 @@ export class NotificationService {
   }
 
   async sendPushNotification(token: string, title: string, body: string) {
-    return this.firebaseService.sendNotification(token, title, body);
+    return  this.firebaseService.sendNotification(token, title, body);
   }
 
   async broadcastNewEpisodeNotification(data: {

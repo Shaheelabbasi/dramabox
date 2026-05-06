@@ -10,6 +10,7 @@ import {
   RewardEntryType,
   RewardHistory,
 } from './entities/reward-history.entity';
+import { CreateRewardRuleDto } from './dto/create-reward-rule.dto';
 import { RewardRule } from './entities/reward-rule.entity';
 
 export type ApplyRewardInput = {
@@ -33,6 +34,42 @@ export class RewardsService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
+
+  async createRewardRule(createRewardRuleDto: CreateRewardRuleDto) {
+    const code = createRewardRuleDto.code.trim().toLowerCase();
+    const name = createRewardRuleDto.name.trim();
+
+    const existingRule = await this.rewardRuleRepository.findOne({
+      where: { code },
+    });
+
+    if (existingRule) {
+      throw new BadRequestException('Reward rule already exists');
+    }
+
+    const rule = await this.rewardRuleRepository.save(
+      this.rewardRuleRepository.create({
+        code,
+        name,
+        coins: createRewardRuleDto.coins,
+        isActive: createRewardRuleDto.isActive ?? true,
+        cooldownSeconds: createRewardRuleDto.cooldownSeconds ?? null,
+        maxPerDay: createRewardRuleDto.maxPerDay ?? null,
+      }),
+    );
+
+    return {
+      id: rule.id,
+      code: rule.code,
+      name: rule.name,
+      coins: rule.coins,
+      is_active: rule.isActive,
+      cooldown_seconds: rule.cooldownSeconds,
+      max_per_day: rule.maxPerDay,
+      created_at: rule.createdAt,
+      updated_at: rule.updatedAt,
+    };
+  }
 
   async applyReward(input: ApplyRewardInput) {
     const ruleCode = input.ruleCode.trim().toLowerCase();

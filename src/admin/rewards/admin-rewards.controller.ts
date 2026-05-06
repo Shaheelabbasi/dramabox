@@ -16,15 +16,15 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../../config/common/decorators/roles.decorator';
-import { UserRole } from '../../config/common/enums/roles.enum';
+import { Roles } from '../../../config/common/decorators/roles.decorator';
+import { UserRole } from '../../../config/common/enums/roles.enum';
 import { AdminRewardsService } from './admin-rewards.service';
-import { CreateRewardRuleDto } from './dto/rewards/create-reward-rule.dto';
-import { GrantRewardDto } from './dto/rewards/grant-reward.dto';
-import { ListRewardRulesDto } from './dto/rewards/list-reward-rules.dto';
-import { ListRewardsHistoryDto } from './dto/rewards/list-rewards-history.dto';
-import { UpdateRewardRuleDto } from './dto/rewards/update-reward-rule.dto';
-import { ApplyRewardDto } from './dto/rewards/apply-reward.dto';
+import { CreateRewardRuleDto } from '../dto/rewards/create-reward-rule.dto';
+import { GrantRewardDto } from '../dto/rewards/grant-reward.dto';
+import { ListRewardRulesDto } from '../dto/rewards/list-reward-rules.dto';
+import { ListRewardsHistoryDto } from '../dto/rewards/list-rewards-history.dto';
+import { UpdateRewardRuleDto } from '../dto/rewards/update-reward-rule.dto';
+import { ApplyRewardDto } from '../dto/rewards/apply-reward.dto';
 
 @Controller('admin')
 @Roles([UserRole.ADMIN])
