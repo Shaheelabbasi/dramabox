@@ -23,6 +23,7 @@ import { UpdateUserDetailsDto } from './dto/update-user-details.dto';
 import { UpsertUserFavoriteDto } from './dto/upsert-user-favorite.dto';
 import { ListUserFavoritesDto } from './dto/list-user-favorites.dto';
 import { CreateAdWatchDto } from './dto/create-ad-watch.dto';
+import { ClaimCheckInRewardDto } from './dto/claim-check-in-reward.dto';
 
 @Controller('users')
 @ApiTags('Users')
@@ -38,20 +39,14 @@ export class UsersController {
     return this.usersService.updateFirebaseToken(updateFirebaseTokenDto);
   }
 
-  @Post('check-in')
-  @ApiOperation({ summary: 'Check in for daily rewards' })
-  @ApiBody({ type: CheckInDto })
-  async checkIn(@Body() checkInDto: CheckInDto) {
-    return this.usersService.checkIn(checkInDto);
+  @Post('check-in/claim')
+  @ApiOperation({ summary: 'Claim daily check-in reward' })
+  @ApiBody({ type: ClaimCheckInRewardDto })
+  async claimCheckInReward(@Body() claimCheckInRewardDto: ClaimCheckInRewardDto) {
+    return this.usersService.claimCheckInReward(claimCheckInRewardDto);
   }
 
-  @Get('check-in/status')
-  @ApiOperation({ summary: 'Get daily check-in status' })
-  @ApiQuery({ name: 'userId', required: false, type: Number })
-  @ApiQuery({ name: 'deviceId', required: false, type: String })
-  async getCheckInStatus(@Query() checkInDto: CheckInDto) {
-    return this.usersService.getCheckInStatus(checkInDto);
-  }
+
 
   @Get('streak')
   @ApiOperation({ summary: 'Get user streak details' })

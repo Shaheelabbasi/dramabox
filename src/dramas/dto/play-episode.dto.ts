@@ -23,4 +23,8 @@ export class PlayEpisodeDto {
   @Type(() => Boolean)
   @IsBoolean()
   unlockWithCoins?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  videoQuality?: string;
 }

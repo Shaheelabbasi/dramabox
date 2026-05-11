@@ -191,7 +191,7 @@ export class SubscriptionsService {
     }
   }
 
-  async verifyGoogleCoinPurchase(dto: VerifyGoogleCoinPurchaseDto) {
+  async  verifyGoogleCoinPurchase(dto: VerifyGoogleCoinPurchaseDto) {
     if (!dto.userId && !dto.deviceId) {
       throw new BadRequestException('userId or deviceId is required');
     }
@@ -209,7 +209,7 @@ export class SubscriptionsService {
     if (coinsToCredit <= 0) {
       throw new BadRequestException('Coin pack must credit at least 1 coin');
     }
-
+ 
     const googleData = await this.verifyGoogleProductPurchase(
       dto.purchaseToken,
       dto.productId,
@@ -592,7 +592,6 @@ export class SubscriptionsService {
         },
       },
     );
-    console.log('subs crpyion acknowldement res:',res);
     if (!res.ok) {
       const responseBody = await this.readResponseBody(res);
       throw new BadRequestException(
@@ -844,7 +843,6 @@ export class SubscriptionsService {
   ): NormalizedGoogleSubscriptionPurchase | null {
     const lineItems = data.lineItems ?? [];
     if (lineItems.length === 0) {
-      console.log("sdjf hdjhfdsfjkds ")
       return null;
     }
 

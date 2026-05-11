@@ -15,6 +15,7 @@ type UploadFile = {
 export class MinioService {
   private readonly minioClient: Minio.Client;
   private readonly logger = new Logger(MinioService.name);
+  private readonly defaultSignedUrlExpirySeconds: number;
 
   constructor(private configService: ConfigService) {
     this.minioClient = new Minio.Client({
@@ -28,6 +29,7 @@ export class MinioService {
       accessKey: this.configService.get<string>('MINIO_ACCESS_KEY') ?? '',
       secretKey: this.configService.get<string>('MINIO_SECRET_KEY') ?? '',
     });
+    this.defaultSignedUrlExpirySeconds = this.resolveDefaultSignedUrlExpiry();
   }
 
   async uploadDramaThumbnail(file: UploadFile) {
@@ -60,6 +62,52 @@ export class MinioService {
         'dramabox-episode-thumbnails',
       ),
       'thumbnail',
+    );
+  }
+
+  async generateSignedGetUrl(
+    bucketName: string,
+    objectName: string,
+    expiresInSeconds = this.defaultSignedUrlExpirySeconds,
+  ): Promise<string> {
+    if (!bucketName?.trim()) {
+      throw new BadRequestException('Bucket name is required');
+    }
+
+    if (!objectName?.trim()) {
+      throw new BadRequestException('Object name is required');
+    }
+
+    const validatedExpiry = this.validateSignedUrlExpiry(expiresInSeconds);
+    try {
+      return await this.minioClient.presignedGetObject(
+        bucketName.trim(),
+        objectName.trim(),
+        validatedExpiry,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unknown Minio presigned URL error';
+      throw new BadRequestException(message);
+    }
+  }
+
+  async generateSignedGetUrlFromAssetUrl(
+    assetUrl: string,
+    expiresInSeconds = this.defaultSignedUrlExpirySeconds,
+  ): Promise<string> {
+    const parsed = this.parseAssetUrl(assetUrl);
+
+    if (!parsed) {
+      throw new BadRequestException('Invalid Minio asset URL');
+    }
+
+    return this.generateSignedGetUrl(
+      parsed.bucketName,
+      parsed.objectName,
+      expiresInSeconds,
     );
   }
 
@@ -151,6 +199,32 @@ export class MinioService {
       await this.minioClient.makeBucket(bucketName, 'us-east-1');
       this.logger.log(`Created bucket ${bucketName}`);
     }
+  }
+
+  private resolveDefaultSignedUrlExpiry(): number {
+    const value = Number.parseInt(
+      this.configService.get<string>('MINIO_PRESIGNED_URL_EXPIRY_SECONDS', '300'),
+      10,
+    );
+
+    return this.validateSignedUrlExpiry(value);
+  }
+
+  private validateSignedUrlExpiry(value: number): number {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new BadRequestException(
+        'Signed URL expiry must be a positive number of seconds',
+      );
+    }
+
+    const maxExpirySeconds = 7 * 24 * 60 * 60;
+    if (value > maxExpirySeconds) {
+      throw new BadRequestException(
+        `Signed URL expiry cannot exceed ${maxExpirySeconds} seconds`,
+      );
+    }
+
+    return Math.floor(value);
   }
 
   private getPublicBaseUrl() {

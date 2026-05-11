@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MinioModule } from '../minio/minio.module';
 import { UsersModule } from '../users/users.module';
 import { DramasController } from './dramas.controller';
 import { DramasService } from './dramas.service';
@@ -15,6 +16,7 @@ import { UserFavoriteDrama } from './entities/user-favorite-drama.entity';
 
 @Module({
   imports: [
+    MinioModule,
     UsersModule,
     TypeOrmModule.forFeature([
       Drama,

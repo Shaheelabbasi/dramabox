@@ -65,7 +65,7 @@ export class User extends BaseTimestamps {
   firebaseToken: string | null;
 
   @ApiProperty({ example: true })
-  @Column({ name: 'notifications_enabled', type: 'boolean', default: true })
+  @Column({ name: 'notifications_enabled', type: 'boolean', default: false })
   notificationsEnabled: boolean;
 
   @OneToMany(

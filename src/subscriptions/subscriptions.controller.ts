@@ -33,7 +33,6 @@ export class SubscriptionsController {
     summary: 'Google Play RTDN Webhook',
   })
   async googleWebhook(@Body() body: any) {
-    console.log('called ');
     return this.subscriptionsService.handleGoogleRtdn(body);
   }
 

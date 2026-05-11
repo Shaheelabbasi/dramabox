@@ -45,6 +45,7 @@ import { AccountStatus } from './enums/account-status.enum';
 import { UserStreak } from './entities/user-streaks.entity';
 import { AdWatch } from './entities/ad-watch.entity';
 import { CreateAdWatchDto } from './dto/create-ad-watch.dto';
+import { ClaimCheckInRewardDto } from './dto/claim-check-in-reward.dto';
 
 type CreateUserInput = {
   email: string;
@@ -197,7 +198,7 @@ export class UsersService {
         updated_at: savedUser.updatedAt,
       },
     };
-  } 
+  }
 
   async checkIn(checkInDto: CheckInDto) {
     const user = await this.resolveUserFromIdentifiers(checkInDto);
@@ -207,14 +208,20 @@ export class UsersService {
       this.getUtcDayWindow(now);
     const todayDayStart = this.getUtcDayStartMs(now.getTime());
 
-    const [existingCheckIn, dailyRule, streakRecord] = await Promise.all([
-      this.userCheckInRepository.findOne({
-        where: { userId, checkInAt: Between(startOfDayMs, endOfDayMs) },
-        order: { id: 'DESC' },
-      }),
-      this.rewardsService.findRuleByCode(DAILY_CHECK_IN_RULE_CODE),
-      this.userStreakRepository.findOne({ where: { userId } }),
-    ]);
+    const [existingCheckIn, dailyRule, streakRecord, existingReward] =
+      await Promise.all([
+        this.userCheckInRepository.findOne({
+          where: { userId, checkInAt: Between(startOfDayMs, endOfDayMs) },
+          order: { id: 'DESC' },
+        }),
+        this.rewardsService.findRuleByCode(DAILY_CHECK_IN_RULE_CODE),
+        this.userStreakRepository.findOne({ where: { userId } }),
+        this.rewardHistoryRepository.findOne({
+          where: {
+            idempotencyKey: `${DAILY_CHECK_IN_REFERENCE_TYPE}:${userId}:${dayKey}`,
+          },
+        }),
+      ]);
 
     const todayReward =
       dailyRule && dailyRule.isActive ? Number(dailyRule.coins) : 0;
@@ -225,7 +232,7 @@ export class UsersService {
         checked_in: true,
         already_checked_in: true,
         check_in_at: Number(existingCheckIn.checkInAt),
-        can_claim: false,
+        can_claim: !existingReward,
         today_reward: todayReward,
         next_claim_at: nextDayStartMs,
       };
@@ -242,14 +249,7 @@ export class UsersService {
 
     const { streak } = this.calculateStreak(rawStreak, todayDayStart);
 
-    const [rewardResult, checkIn] = await Promise.all([
-      this.rewardsService.applyReward({
-        userId,
-        ruleCode: DAILY_CHECK_IN_RULE_CODE,
-        referenceType: DAILY_CHECK_IN_REFERENCE_TYPE,
-        referenceId: `${userId}:${dayKey}`,
-        idempotencyKey: `${DAILY_CHECK_IN_REFERENCE_TYPE}:${userId}:${dayKey}`,
-      }),
+    await Promise.all([
       this.userCheckInRepository.save(
         this.userCheckInRepository.create({
           userId,
@@ -263,9 +263,70 @@ export class UsersService {
       message: 'Check-in recorded successfully',
       checked_in: true,
       already_checked_in: false,
-      check_in_at: Number(checkIn.checkInAt),
-      can_claim: false,
+      can_claim: true,
       today_reward: todayReward,
+      next_claim_at: nextDayStartMs,
+    };
+  }
+
+  async claimCheckInReward(claimCheckInRewardDto: ClaimCheckInRewardDto) {
+    const user = await this.resolveUserFromIdentifiers(claimCheckInRewardDto);
+    const userId = user.id;
+    const now = new Date();
+    const { startOfDayMs, endOfDayMs, dayKey, nextDayStartMs } =
+      this.getUtcDayWindow(now);
+    const requestedRuleCode = claimCheckInRewardDto.ruleCode
+      .trim()
+      .toLowerCase();
+    const requestedDayMatch = requestedRuleCode.match(/^streak_day_(\d+)$/);
+
+    if (!requestedDayMatch) {
+      throw new BadRequestException('Invalid streak reward rule code');
+    }
+
+    const requestedStreakDay = Number(requestedDayMatch[1]);
+
+    const [existingCheckIn, streakRecord] = await Promise.all([
+      this.userCheckInRepository.findOne({
+        where: { userId, checkInAt: Between(startOfDayMs, endOfDayMs) },
+        order: { id: 'DESC' },
+      }),
+      this.userStreakRepository.findOne({ where: { userId } }),
+    ]);
+
+    if (!existingCheckIn) {
+      throw new BadRequestException(
+        'User must check in first before claiming reward',
+      );
+    }
+    if (!streakRecord || streakRecord.currentStreak < requestedStreakDay) {
+      throw new BadRequestException(
+        `User is not eligible to claim ${requestedRuleCode}`,
+      );
+    }
+
+    const expectedStreakDay = Math.min(streakRecord.currentStreak, 7);
+    if (requestedStreakDay !== expectedStreakDay) {
+      throw new BadRequestException(
+        `Invalid claim day. Expected streak_day_${expectedStreakDay}`,
+      );
+    }
+
+    const rewardResult = await this.rewardsService.applyReward({
+      userId,
+      ruleCode: requestedRuleCode,
+      referenceType: DAILY_CHECK_IN_REFERENCE_TYPE,
+      referenceId: `${userId}:${dayKey}:${requestedRuleCode}`,
+      idempotencyKey: `${DAILY_CHECK_IN_REFERENCE_TYPE}:${userId}:${dayKey}`,
+    });
+
+    return {
+      message:
+        rewardResult.status === 'already_applied'
+          ? 'Reward already claimed today'
+          : 'Reward claimed successfully',
+      checked_in: true,
+      check_in_at: Number(existingCheckIn.checkInAt),
       next_claim_at: nextDayStartMs,
       reward: {
         status: rewardResult.status,
@@ -330,37 +391,6 @@ export class UsersService {
     return this.getUserStreak(user.id);
   }
 
-  async getCheckInStatus(checkInDto: CheckInDto) {
-    const user = await this.resolveUserFromIdentifiers(checkInDto);
-    const userId = user.id;
-    const now = new Date();
-    const { startOfDayMs, endOfDayMs, nextDayStartMs } =
-      this.getUtcDayWindow(now);
-
-    const [existingCheckIn, dailyRule] = await Promise.all([
-      this.userCheckInRepository.findOne({
-        where: {
-          userId,
-          checkInAt: Between(startOfDayMs, endOfDayMs),
-        },
-        order: {
-          id: 'DESC',
-        },
-      }),
-      this.rewardsService.findRuleByCode(DAILY_CHECK_IN_RULE_CODE),
-    ]);
-
-    const todayReward =
-      dailyRule && dailyRule.isActive ? Number(dailyRule.coins) : 0;
-    const canClaim = !existingCheckIn;
-
-    return {
-      canClaim,
-      todayReward,
-      nextClaimAt: canClaim ? null : nextDayStartMs,
-    };
-  }
-
   // service method
   private getNextMilestone(currentStreak: number): number | null {
     return STREAK_MILESTONES.find((m) => m > currentStreak) ?? null;
@@ -396,9 +426,8 @@ export class UsersService {
     let user: User;
     user = await this.findOrCreateGuestByDeviceId(idOrDeviceId);
     const now = Date.now();
-
-    const activeSubscriptionCount =
-      await this.userSubscriptionsRepository.count({
+    const [activeSubscriptionCount, checkInResult] = await Promise.all([
+      this.userSubscriptionsRepository.count({
         where: {
           userId: user.id,
           status: In([
@@ -408,11 +437,17 @@ export class UsersService {
           startsAt: LessThanOrEqual(now),
           endsAt: MoreThan(now),
         },
-      });
+      }),
+      this.checkIn({ userId: user.id }),
+    ]);
+
+    const streak = await this.getUserStreak(user.id);
 
     return {
       ...user,
       hasActiveSubscription: activeSubscriptionCount > 0,
+      streak,
+      check_in: checkInResult,
     };
   }
 
@@ -464,7 +499,7 @@ export class UsersService {
         'wh.completed AS completed',
       ])
 
-      .orderBy('wh.drama_id', 'DESC')
+      .orderBy('wh.lastWatchedAt', 'DESC')
       .skip(listUserWatchHistoryDto.skip)
       .take(listUserWatchHistoryDto.take);
 
@@ -525,11 +560,11 @@ export class UsersService {
       transaction_type: 'billing',
       created_at: transaction.createdAt,
       billing: {
-          amount: transaction.amount,
-          currency: transaction.currency,
-          provider: transaction.provider,
-          provider_txn_id: transaction.providerTxnId,
-          status: transaction.status,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        provider: transaction.provider,
+        provider_txn_id: transaction.providerTxnId,
+        status: transaction.status,
       },
     }));
 
@@ -646,12 +681,12 @@ export class UsersService {
 
     const existingFavoriteForDrama =
       await this.userFavoriteDramaRepository.findOne({
-      where: {
-        user: { id: user.id },
-        drama: { id: drama.id },
-      },
-      relations: { drama: true, episode: true },
-    });
+        where: {
+          user: { id: user.id },
+          drama: { id: drama.id },
+        },
+        relations: { drama: true, episode: true },
+      });
 
     if (isFavorite) {
       if (existingFavoriteForDrama) {
@@ -688,7 +723,8 @@ export class UsersService {
         drama,
         episode,
       });
-      const savedFavorite = await this.userFavoriteDramaRepository.save(favorite);
+      const savedFavorite =
+        await this.userFavoriteDramaRepository.save(favorite);
 
       return {
         message: 'Added to favourites',
@@ -1044,11 +1080,22 @@ export class UsersService {
       throw new BadRequestException('userId or deviceId is required');
     }
 
-    if (updateUserDetailsDto.notificationsEnabled !== undefined) {
-      user.notificationsEnabled = updateUserDetailsDto.notificationsEnabled;
-    }
+    const shouldApplyNotificationToggleReward =
+      updateUserDetailsDto.notificationsEnabled === true &&
+      user.notificationsEnabled !== true;
+
+    Object.assign(user, updateUserDetailsDto);
 
     const savedUser = await this.usersRepository.save(user);
+    if (shouldApplyNotificationToggleReward) {
+      await this.rewardsService.applyReward({
+        userId: savedUser.id,
+        ruleCode: 'notification_toggle',
+        referenceType: 'notification_toggle',
+        referenceId: savedUser.id.toString(),
+        idempotencyKey: `notification_toggle:${savedUser.id}`,
+      });
+    }
 
     return {
       message: 'User details updated successfully',

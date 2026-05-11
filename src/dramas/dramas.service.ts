@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { MinioService } from '../minio/minio.service';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { UpdateWatchHistoryDto } from './dto/update-watch-history.dto';
@@ -54,6 +55,7 @@ export class DramasService {
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
+    private readonly minioService: MinioService,
   ) {}
 
   async findAll(
@@ -327,6 +329,7 @@ export class DramasService {
     deviceId?: string,
     unlockWithCoins?: boolean,
   ) {
+    console.log('called for ', deviceId);
     const episode = await this.ensureEpisodeExists(episodeId);
     const episodeUnlockCost = this.getEpisodeUnlockCost(episode);
 
@@ -459,6 +462,8 @@ export class DramasService {
       watchHistory = await this.watchHistoryRepository.save(watchHistory);
     }
 
+    
+
     // =========================================
     //  VIEW LOG (GLOBAL LIMIT TRACKING)
     // =========================================
@@ -476,6 +481,11 @@ export class DramasService {
     // =========================================
     // RESPONSE
     // =========================================
+    const signedVideoUrl =
+      await this.minioService.generateSignedGetUrlFromAssetUrl(
+        episode.videoUrl,
+      );
+
     return {
       can_watch: true,
       is_resuming: isResuming,
@@ -484,7 +494,7 @@ export class DramasService {
         drama_id: episode.dramaId,
         episode_number: episode.episodeNumber,
         title: episode.title,
-        video_url: episode.videoUrl,
+        video_url: signedVideoUrl,
         thumbnail: episode.thumbnail,
         is_free: episode.coinCost === 0,
         coin_cost: episode.coinCost,
